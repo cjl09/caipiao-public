@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f2">
+  <meta name="description" content="个人彩票决策记录与随机选号工具，数据保存在当前浏览器。">
+  <title>小彩日记 · 个人购彩记录</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#today" aria-label="小彩日记首页" data-nav="today">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span><strong>小彩日记</strong><small>自用 · 轻记录</small></span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <button class="nav-button active" data-nav="today">今日</button>
+        <button class="nav-button" data-nav="dlt">大乐透</button>
+        <button class="nav-button" data-nav="ssq">双色球</button>
+        <button class="nav-button" data-nav="records">记录</button>
+      </nav>
+      <span class="local-badge"><span class="status-dot"></span>仅保存在此设备</span>
+    </header>
+
+    <main>
+      <section class="view active" id="view-today" aria-labelledby="today-title">
+        <div class="page-heading today-heading">
+          <div>
+            <p class="eyebrow">YOUR DAILY CHECK-IN</p>
+            <h1 id="today-title">今天，交给骰子</h1>
+            <p class="muted">先决定今天是否购彩，再把结果记下来。</p>
+          </div>
+          <div class="date-chip"><span class="date-spark">✳</span><span id="today-date"></span></div>
+        </div>
+
+        <div class="today-layout">
+          <article class="decision-card">
+            <div class="card-topline"><span class="step-label"><b>01</b> 今日决定</span><span class="tiny-note">一日一次</span></div>
+            <div class="decision-center">
+              <div class="die" id="die" aria-label="尚未掷骰子"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+              <div class="decision-copy">
+                <p class="result-kicker" id="result-kicker">轮到好运气做决定</p>
+                <h2 id="decision-title">掷一下，看看今天</h2>
+                <p id="decision-detail">1、3、5 休息 · 2、4、6 购彩</p>
+              </div>
+            </div>
+            <div class="decision-footer">
+              <div class="spend-display"><span>今日计划金额</span><strong id="spend-value">¥ —</strong></div>
+              <button class="primary-button" id="roll-dice"><span class="button-icon">↻</span>掷骰子</button>
+            </div>
+            <p class="locked-hint" id="locked-hint">掷出后会自动保存，今天不能重复掷。</p>
+          </article>
+
+          <article class="win-card">
+            <div class="card-topline"><span class="step-label"><b>02</b> 中奖记录</span><span class="win-icon" aria-hidden="true">↗</span></div>
+            <div class="win-card-copy">
+              <h2>今天中了多少？</h2>
+              <p class="muted">开奖后填入实际奖金，收支会自动汇总。</p>
+            </div>
+            <label class="money-field" for="today-win"><span>¥</span><input id="today-win" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" disabled><span class="field-unit">元</span></label>
+            <button class="secondary-button full-width" id="save-today-win" disabled>保存中奖金额</button>
+            <p class="save-feedback" id="today-feedback" aria-live="polite">先掷骰子，开始今天的记录。</p>
+          </article>
+        </div>
+
+        <section class="summary-section" aria-label="累计收支">
+          <div class="section-heading"><div><p class="eyebrow">YOUR TOTALS</p><h2>累计收支</h2></div><button class="text-button" data-nav="records">查看每日记录 <span>↗</span></button></div>
+          <div class="summary-grid">
+            <article class="summary-card"><span class="summary-label">累计花费</span><strong id="total-spend">¥0</strong><span class="summary-mark expense-mark">−</span></article>
+            <article class="summary-card"><span class="summary-label">累计中奖</span><strong id="total-win">¥0</strong><span class="summary-mark win-mark">＋</span></article>
+            <article class="summary-card net-card"><span class="summary-label">净收支 <small>中奖 − 花费</small></span><strong id="total-net">¥0</strong><span class="net-caption" id="net-caption">从今天开始记录</span></article>
+          </div>
+        </section>
+        <aside class="responsible-note"><span>小提醒</span><p>骰子和随机号码只用于记录与娱乐。每个有效号码组合的中奖概率相同，请按自己的预算购彩。</p></aside>
+      </section>
+
+      <section class="view" id="view-dlt" aria-labelledby="dlt-title">
+        <div class="page-heading game-heading">
+          <div><p class="eyebrow">SPORT LOTTERY · SUPER LOTTO</p><h1 id="dlt-title">超级大乐透</h1><p class="muted">前区 01–35 选 5 · 后区 01–12 选 2</p></div>
+          <div class="rule-pill"><strong>¥2</strong><span>每注基本投注</span></div>
+        </div>
+        <div class="game-panel">
+          <div class="mode-tabs" role="tablist" aria-label="大乐透玩法">
+            <button class="mode-tab active" data-dlt-mode="single">单式选号</button><button class="mode-tab" data-dlt-mode="multiple">复式选号</button><button class="mode-tab" data-dlt-mode="dan-tuo">胆拖机选</button><button class="mode-tab" data-dlt-mode="package">固定套餐票</button>
+          </div>
+          <div id="dlt-mode-content"></div>
+        </div>
+        <aside class="probability-note"><span class="note-symbol">i</span><p>随机号码不预测开奖结果。大乐透单注 5+2 的理论概率为 1 / 21,425,712；增加注数会按比例增加成本，不能改变单注的中奖概率。</p></aside>
+      </section>
+
+      <section class="view" id="view-ssq" aria-labelledby="ssq-title">
+        <div class="page-heading game-heading">
+          <div><p class="eyebrow">CHINA WELFARE LOTTERY · DOUBLE CHROMOSPHERE</p><h1 id="ssq-title">双色球</h1><p class="muted">红球 01–33 选 6 · 蓝球 01–16 选 1</p></div>
+          <div class="rule-pill"><strong>¥2</strong><span>每注基本投注</span></div>
+        </div>
+        <div class="game-panel">
+          <div class="mode-tabs" role="tablist" aria-label="双色球玩法"><button class="mode-tab active" data-ssq-mode="single">单式选号</button><button class="mode-tab" data-ssq-mode="multiple">复式选号</button></div>
+          <div id="ssq-mode-content"></div>
+        </div>
+        <aside class="probability-note"><span class="note-symbol">i</span><p>随机号码不预测开奖结果。双色球单注头奖组合概率为 1 / 17,721,088；选择复式会展开成多注并相应增加金额。</p></aside>
+      </section>
+
+      <section class="view" id="view-records" aria-labelledby="records-title">
+        <div class="page-heading records-heading">
+          <div><p class="eyebrow">A SMALL RECORD, DAY BY DAY</p><h1 id="records-title">每日记录</h1><p class="muted">记下计划花费和实际奖金，看看长期收支。</p></div>
+          <button class="secondary-button export-button" id="export-csv"><span>↓</span>导出 CSV</button>
+        </div>
+        <div class="summary-grid record-summary">
+          <article class="summary-card"><span class="summary-label">记录天数</span><strong id="record-days">0 天</strong><span class="summary-mark day-mark">▦</span></article>
+          <article class="summary-card"><span class="summary-label">累计花费</span><strong id="records-spend">¥0</strong><span class="summary-mark expense-mark">−</span></article>
+          <article class="summary-card net-card"><span class="summary-label">净收支</span><strong id="records-net">¥0</strong><span class="net-caption">中奖金额 − 花费金额</span></article>
+        </div>
+        <div class="records-card">
+          <div class="records-card-heading"><div><h2>全部记录</h2><p>可以补填每期实际中奖金额。</p></div><span id="record-count" class="count-pill">0 条</span></div>
+          <div class="table-wrap"><table><thead><tr><th>日期</th><th>骰子</th><th>结果</th><th>花费</th><th>中奖金额</th><th>净额</th><th></th></tr></thead><tbody id="records-body"></tbody></table></div>
+          <div class="empty-state" id="empty-records"><span class="empty-die">⚄</span><strong>还没有每日记录</strong><p>回到「今日」掷一次骰子，这里就会出现记录。</p><button class="text-button" data-nav="today">去掷骰子 <span>→</span></button></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer"><span>小彩日记 <i>·</i> 个人记录工具</span><span>记录仅保存在当前浏览器，不会上传。</span><button id="show-rules" class="footer-link">号码规则来源</button></footer>
+  </div>
+  <dialog id="rules-dialog" class="rules-dialog">
+    <div class="dialog-head"><div><p class="eyebrow">OFFICIAL RULES</p><h2>规则参考</h2></div><button class="close-dialog" id="close-rules" aria-label="关闭">×</button></div>
+    <p>选号范围、复式与胆拖组合方式按以下官方规则说明计算。具体投注、奖级和当期安排请以官方公告及销售终端为准。</p>
+    <ul>
+      <li><a href="https://m.lottery.gov.cn/ksjz/m/yxgz_dlt/" target="_blank" rel="noreferrer">中国体育彩票：超级大乐透游戏规则</a></li>
+      <li><a href="https://m.lottery.gov.cn/mltsz/jsq/index.html" target="_blank" rel="noreferrer">中国体育彩票：大乐透计算器（当前规则入口）</a></li>
+      <li><a href="https://www.gstc.org.cn/newsDetail/160700/80320" target="_blank" rel="noreferrer">体彩中心公告：大乐透固定套餐票产品结构（2026 年 10 月）</a></li>
+      <li><a href="https://zhs.mof.gov.cn/zhengcefabu/202601/t20260116_3982035.htm" target="_blank" rel="noreferrer">财政部：双色球规则变更审批意见</a></li>
+      <li><a href="https://www.shantou.gov.cn/mzj/flcp/fcyw/content/post_2507332.html" target="_blank" rel="noreferrer">中国福彩规则变更公告（2026 年起执行）</a></li>
+    </ul>
+    <button class="primary-button dialog-done" id="dialog-done">知道了</button>
+  </dialog>
+</body>
+</html>
