@@ -580,13 +580,14 @@
       ui.packageTarget = target.id;
     }
     const selection = target.selection;
+    const dailyAlreadyRecorded = packageReady(entries) && hasLotteryTicketToday('dlt', currentTicketSnapshot('dlt'));
     const formatText = packageComponentDefinitions(ui.packageAmount).map(component => component.kind === 'single'
       ? '单式 5+2' : `复式 ${component.frontCount}+${component.backCount}`).reduce((summary, label) => {
         summary[label] = (summary[label] || 0) + 1;
         return summary;
       }, {});
     const formatSummary = Object.entries(formatText).map(([label, count]) => `${label} × ${count}`).join(' · ');
-    content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">FIXED PACKAGE</div><h2>固定格式套餐票</h2><p>先选固定金额档，再为其中每个单式/复式组合选号；套餐金额和结构不变。</p></div><span class="tiny-note">按固定模板</span></div>
+    content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">FIXED PACKAGE</div><h2>固定格式套餐票</h2><p>手动选齐整套号码后，可点“记入今日支出”；“保存号码”会放入常用号码库。</p></div><span class="tiny-note">按固定模板</span></div>
       <div class="choice-row package-picker"><label class="select-label" for="package-amount">固定金额</label><select id="package-amount" class="select-field">${Object.keys(DLT_PACKAGES).map(amount => `<option value="${amount}" ${Number(amount) === ui.packageAmount ? 'selected' : ''}>${amount} 元</option>`).join('')}</select><span class="package-format-summary">${formatSummary}</span></div>
       <div class="package-components">${entries.map(component => {
         const done = component.selection.front.length === component.frontCount && component.selection.back.length === component.backCount;
@@ -594,7 +595,7 @@
       }).join('')}</div>
       <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> ${escapeHtml(target.label)} · 前区号码</strong><span>请选择 ${target.frontCount} 个</span></div>${ballGrid(35, selection.front, 'package-front')}</div>
       <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> ${escapeHtml(target.label)} · 后区号码</strong><span>请选择 ${target.backCount} 个</span></div>${ballGrid(12, selection.back, 'package-back')}</div>
-      <div class="tool-actions"><span class="ticket-cost">整套金额固定<strong>${money(ui.packageAmount)}</strong><span class="muted-cost">号码齐全后计入支出</span></span><div class="inline-controls"><button class="light-button" id="random-package-part">随机当前组合</button><button class="light-button" id="random-package-all">整套随机并记支出</button><button class="light-button" id="clear-package-part">清空当前</button><button class="primary-button" id="save-dlt-ticket" ${packageReady(entries) ? '' : 'disabled'}>保存号码</button></div></div>
+      <div class="tool-actions"><span class="ticket-cost">整套金额固定<strong>${money(ui.packageAmount)}</strong><span class="muted-cost">号码齐全后计入支出</span></span><div class="inline-controls"><button class="light-button" id="random-package-part">随机当前组合</button><button class="light-button" id="random-package-all">整套随机并记支出</button><button class="light-button" data-record-ticket="dlt" ${packageReady(entries) && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="clear-package-part">清空当前</button><button class="primary-button" id="save-dlt-ticket" ${packageReady(entries) ? '' : 'disabled'}>保存号码</button></div></div>
       ${renderPackageResult(entries)}${savedTicketsMarkup('dlt')}`;
   }
 
@@ -603,25 +604,27 @@
     const content = document.getElementById('dlt-mode-content');
     if (ui.dltMode === 'single') {
       const valid = ui.dltFront.length === 5 && ui.dltBack.length === 2;
-      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选满 5 个前区和 2 个后区号码，或使用随机选号。</p></div><span class="tiny-note">5 + 2 · ¥2</span></div>
+      const dailyAlreadyRecorded = valid && hasLotteryTicketToday('dlt', currentTicketSnapshot('dlt'));
+      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选好号码后点“记入今日支出”；“保存号码”会放入常用号码库。</p></div><span class="tiny-note">5 + 2 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 前区号码</strong><span>已选 ${ui.dltFront.length} / 5</span></div>${ballGrid(35, ui.dltFront, 'dlt-front')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 后区号码</strong><span>已选 ${ui.dltBack.length} / 2</span></div>${ballGrid(12, ui.dltBack, 'dlt-back')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注并记支出 <span>→</span></button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('dlt')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="dlt" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('dlt')}`;
       return;
     }
     if (ui.dltMode === 'multiple') {
       const lineCount = combination(ui.dltFront.length, 5) * combination(ui.dltBack.length, 2);
       const valid = ui.dltFront.length >= 5 && ui.dltBack.length >= 2 && lineCount <= DLT_MAX_BETS;
+      const dailyAlreadyRecorded = valid && hasLotteryTicketToday('dlt', currentTicketSnapshot('dlt'));
       const cost = lineCount * 2;
       const randomLines = combination(ui.dltRandomFrontCount, 5) * combination(ui.dltRandomBackCount, 2);
       const randomValid = randomLines > 0 && randomLines <= DLT_MAX_BETS;
       const frontOptions = Array.from({ length: 31 }, (_, index) => index + 5);
       const backOptions = Array.from({ length: 11 }, (_, index) => index + 2);
-      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">MULTIPLE SELECTION</div><h2>选择复式号码</h2><p>选多出的号码会展开为所有 5+2 组合；点击已选号码可取消。</p></div></div>
+      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">MULTIPLE SELECTION</div><h2>选择复式号码</h2><p>号码选好后可点“记入今日支出”；“保存号码”会放入常用号码库。</p></div></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 前区号码</strong><span>已选 ${ui.dltFront.length} 个 · 需至少 5 个</span></div>${ballGrid(35, ui.dltFront, 'dlt-front')}<div class="helper-row"><span>01–35 中选择号码</span><span>${ui.dltFront.length > 5 ? `${combination(ui.dltFront.length, 5)} 种前区组合` : ''}</span></div></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 后区号码</strong><span>已选 ${ui.dltBack.length} 个 · 需至少 2 个</span></div>${ballGrid(12, ui.dltBack, 'dlt-back')}<div class="helper-row"><span>01–12 中选择号码</span><span>${ui.dltBack.length > 2 ? `${combination(ui.dltBack.length, 2)} 种后区组合` : ''}</span></div></div>
         <div class="choice-row random-counts"><span class="select-label">随机选号数量</span><label for="dlt-random-front-count">前区</label><select id="dlt-random-front-count" class="select-field">${frontOptions.map(count => `<option value="${count}" ${count === ui.dltRandomFrontCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><label for="dlt-random-back-count">后区</label><select id="dlt-random-back-count" class="select-field">${backOptions.map(count => `<option value="${count}" ${count === ui.dltRandomBackCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><span class="subtle-caption">${randomValid ? `随机后为 ${randomLines.toLocaleString('zh-CN')} 注 · ${money(randomLines * 2)}` : '组合超过单票金额上限，请减少号码数'}</span></div>
-        <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(cost)}</span>` : `<span>${lineCount > DLT_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-dlt-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" id="clear-dlt-multiple">清空</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
+        <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(cost)}</span>` : `<span>${lineCount > DLT_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-dlt-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" data-record-ticket="dlt" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="clear-dlt-multiple">清空</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
         ${!valid && lineCount > DLT_MAX_BETS ? '<p class="subtle-caption">请减少已选号码；当前票面超过单张彩票的金额上限。</p>' : ''}${savedTicketsMarkup('dlt')}`;
       return;
     }
@@ -799,23 +802,25 @@
     const content = document.getElementById('ssq-mode-content');
     if (ui.ssqMode === 'single') {
       const valid = ui.ssqRed.length === 6 && ui.ssqBlue.length === 1;
-      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选择 6 个红球和 1 个蓝球；随机生成会计入今天的花费。</p></div><span class="tiny-note">6 + 1 · ¥2</span></div>
+      const dailyAlreadyRecorded = valid && hasLotteryTicketToday('ssq', currentTicketSnapshot('ssq'));
+      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选好号码后点“记入今日支出”；“保存号码”会放入常用号码库。</p></div><span class="tiny-note">6 + 1 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 红色球</strong><span>已选 ${ui.ssqRed.length} / 6</span></div>${ballGrid(33, ui.ssqRed, 'ssq-red', 'red-ball')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 蓝色球</strong><span>已选 ${ui.ssqBlue.length} / 1</span></div>${ballGrid(16, ui.ssqBlue, 'ssq-blue', 'blue-ball')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注并记支出 <span>→</span></button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('ssq')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="ssq" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('ssq')}`;
       return;
     }
     const lineCount = combination(ui.ssqRed.length, 6) * ui.ssqBlue.length;
     const valid = ui.ssqRed.length >= 6 && ui.ssqBlue.length >= 1 && lineCount <= SSQ_MAX_BETS;
+    const dailyAlreadyRecorded = valid && hasLotteryTicketToday('ssq', currentTicketSnapshot('ssq'));
     const randomLines = combination(ui.ssqRandomRedCount, 6) * ui.ssqRandomBlueCount;
     const randomValid = randomLines > 0 && randomLines <= SSQ_MAX_BETS;
     const redOptions = Array.from({ length: 28 }, (_, index) => index + 6);
     const blueOptions = Array.from({ length: 16 }, (_, index) => index + 1);
-    content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">MULTIPLE SELECTION</div><h2>选择复式号码</h2><p>红球和蓝球都可以多选，所有 6+1 组合都会展开。</p></div></div>
+    content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">MULTIPLE SELECTION</div><h2>选择复式号码</h2><p>号码选好后可点“记入今日支出”；“保存号码”会放入常用号码库。</p></div></div>
       <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 红色球</strong><span>已选 ${ui.ssqRed.length} 个 · 需至少 6 个</span></div>${ballGrid(33, ui.ssqRed, 'ssq-red', 'red-ball')}<div class="helper-row"><span>01–33 中选择号码</span><span>${ui.ssqRed.length > 6 ? `${combination(ui.ssqRed.length, 6)} 种红球组合` : ''}</span></div></div>
       <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 蓝色球</strong><span>已选 ${ui.ssqBlue.length} 个 · 需至少 1 个</span></div>${ballGrid(16, ui.ssqBlue, 'ssq-blue', 'blue-ball')}<div class="helper-row"><span>01–16 中选择号码</span><span>${ui.ssqBlue.length > 1 ? `${ui.ssqBlue.length} 种蓝球组合` : ''}</span></div></div>
       <div class="choice-row random-counts"><span class="select-label">随机选号数量</span><label for="ssq-random-red-count">红球</label><select id="ssq-random-red-count" class="select-field">${redOptions.map(count => `<option value="${count}" ${count === ui.ssqRandomRedCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><label for="ssq-random-blue-count">蓝球</label><select id="ssq-random-blue-count" class="select-field">${blueOptions.map(count => `<option value="${count}" ${count === ui.ssqRandomBlueCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><span class="subtle-caption">${randomValid ? `随机后为 ${randomLines.toLocaleString('zh-CN')} 注 · ${money(randomLines * 2)}` : '组合超过单票金额上限，请减少号码数'}</span></div>
-      <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(lineCount * 2)}</span>` : `<span>${lineCount > SSQ_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-ssq-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" id="clear-ssq-multiple">清空</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
+      <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(lineCount * 2)}</span>` : `<span>${lineCount > SSQ_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-ssq-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" data-record-ticket="ssq" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="clear-ssq-multiple">清空</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
       ${!valid && lineCount > SSQ_MAX_BETS ? '<p class="subtle-caption">请减少已选号码；当前票面超过单张彩票的金额上限。</p>' : ''}${savedTicketsMarkup('ssq')}`;
   }
 
@@ -852,6 +857,22 @@
     renderRecords();
   }
 
+  function lotteryTicketSignature(ticket) {
+    return JSON.stringify([
+      ticket.game, ticket.kind, ticket.label, ticket.play, ticket.lines, ticket.cost,
+      ticket.amount || null, ticket.front || [], ticket.back || [], ticket.components || null, ticket.banker || null
+    ]);
+  }
+
+  function hasLotteryTicketToday(game, snapshot) {
+    if (!snapshot) return false;
+    const candidate = cleanDailyTicket({
+      ...snapshot, game, play: snapshot.label, cost: snapshot.price
+    });
+    const record = getRecord(todayKey());
+    return Boolean(candidate && record?.tickets?.some(ticket => lotteryTicketSignature(ticket) === lotteryTicketSignature(candidate)));
+  }
+
   function addLotteryRandomTicket(game, snapshot) {
     if (!snapshot) return;
     appendDailyTicket({
@@ -885,6 +906,18 @@
     }
     const quickPick = event.target.closest('[data-quick-pick]');
     if (quickPick) { addQuickPick(quickPick.dataset.quickPick); return; }
+    const recordTicket = event.target.closest('[data-record-ticket]');
+    if (recordTicket) {
+      const game = recordTicket.dataset.recordTicket;
+      const snapshot = currentTicketSnapshot(game);
+      if (!snapshot) return;
+      addLotteryRandomTicket(game, snapshot);
+      if (game === 'dlt') renderDlt();
+      else renderSsq();
+      const feedback = document.getElementById(`${game}-daily-feedback`);
+      if (feedback) feedback.textContent = `已将${snapshot.label}记入今天，计入 ${money(snapshot.price)} 支出。`;
+      return;
+    }
     const dltMode = event.target.closest('[data-dlt-mode]');
     if (dltMode) {
       syncCurrentDraft();
