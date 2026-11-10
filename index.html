@@ -20,6 +20,7 @@
         <button class="nav-button active" data-nav="today">今日</button>
         <button class="nav-button" data-nav="dlt">大乐透</button>
         <button class="nav-button" data-nav="ssq">双色球</button>
+        <button class="nav-button" data-nav="quick-picks">其他随机</button>
         <button class="nav-button" data-nav="records">记录</button>
       </nav>
       <span class="local-badge"><span class="status-dot"></span>仅保存在此设备</span>
@@ -48,7 +49,7 @@
               </div>
             </div>
             <div class="decision-footer">
-              <div class="spend-display"><span>今日计划金额</span><strong id="spend-value">¥ —</strong></div>
+              <div class="spend-display"><span>今日记录支出</span><strong id="spend-value">¥ —</strong></div>
               <button class="primary-button" id="roll-dice"><span class="button-icon">↻</span>掷骰子</button>
             </div>
             <p class="locked-hint" id="locked-hint">掷出后会自动保存，今天不能重复掷。</p>
@@ -103,9 +104,18 @@
         <aside class="probability-note"><span class="note-symbol">i</span><p>随机号码不预测开奖结果。双色球单注头奖组合概率为 1 / 17,721,088；选择复式会展开成多注并相应增加金额。</p></aside>
       </section>
 
+      <section class="view" id="view-quick-picks" aria-labelledby="quick-picks-title">
+        <div class="page-heading game-heading">
+          <div><p class="eyebrow">QUICK RANDOM PICKS</p><h1 id="quick-picks-title">数字彩随机</h1><p class="muted">每次生成一注并自动记入今天的支出和号码记录。</p></div>
+          <div class="rule-pill"><strong>¥2</strong><span>每次随机记一注</span></div>
+        </div>
+        <div id="quick-games-content"></div>
+        <aside class="probability-note"><span class="note-symbol">i</span><p>排列3、排列5、福彩3D 和快乐8每注均按 ¥2 记录。这里的随机选号只会保存在本机记录中，不会代你购买彩票；快乐8可以选择“选一”至“选十”，每次生成对应数量的一注。</p></aside>
+      </section>
+
       <section class="view" id="view-records" aria-labelledby="records-title">
         <div class="page-heading records-heading">
-          <div><p class="eyebrow">A SMALL RECORD, DAY BY DAY</p><h1 id="records-title">每日记录</h1><p class="muted">记下计划花费和实际奖金，看看长期收支。</p></div>
+          <div><p class="eyebrow">A SMALL RECORD, DAY BY DAY</p><h1 id="records-title">每日记录</h1><p class="muted">记下骰子结果、随机号码支出和实际奖金，看看长期收支。</p></div>
           <button class="secondary-button export-button" id="export-csv"><span>↓</span>导出 CSV</button>
         </div>
         <div class="summary-grid record-summary">
@@ -115,8 +125,8 @@
         </div>
         <div class="records-card">
           <div class="records-card-heading"><div><h2>全部记录</h2><p>可以补填每期实际中奖金额。</p></div><span id="record-count" class="count-pill">0 条</span></div>
-          <div class="table-wrap"><table><thead><tr><th>日期</th><th>骰子</th><th>结果</th><th>花费</th><th>中奖金额</th><th>净额</th><th></th></tr></thead><tbody id="records-body"></tbody></table></div>
-          <div class="empty-state" id="empty-records"><span class="empty-die">⚄</span><strong>还没有每日记录</strong><p>回到「今日」掷一次骰子，这里就会出现记录。</p><button class="text-button" data-nav="today">去掷骰子 <span>→</span></button></div>
+          <div class="table-wrap"><table><thead><tr><th>日期</th><th>骰子</th><th>结果</th><th>随机号码 / 玩法</th><th>花费</th><th>中奖金额</th><th>净额</th><th></th></tr></thead><tbody id="records-body"></tbody></table></div>
+          <div class="empty-state" id="empty-records"><span class="empty-die">⚄</span><strong>还没有每日记录</strong><p>掷骰子或生成随机号码后，这里就会出现记录。</p><button class="text-button" data-nav="quick-picks">去随机选号 <span>→</span></button></div>
         </div>
       </section>
     </main>
@@ -129,6 +139,9 @@
     <ul>
       <li><a href="https://m.lottery.gov.cn/ksjz/m/yxgz_dlt/" target="_blank" rel="noreferrer">中国体育彩票：超级大乐透游戏规则</a></li>
       <li><a href="https://m.lottery.gov.cn/mltsz/jsq/index.html" target="_blank" rel="noreferrer">中国体育彩票：大乐透计算器（当前规则入口）</a></li>
+      <li><a href="https://m.lottery.gov.cn/ksjz/plw/guize/" target="_blank" rel="noreferrer">中国体育彩票：排列3、排列5游戏规则</a></li>
+      <li><a href="https://gzw.nc.gov.cn/ncsmzj/flcp/202111/11b576ed773f49c8b205f42fb4dca623.shtml" target="_blank" rel="noreferrer">中国福利彩票：3D游戏规则</a></li>
+      <li><a href="https://www.scflcp.com.cn/yxgz/823144315.jhtml" target="_blank" rel="noreferrer">中国福利彩票：快乐8游戏规则</a></li>
       <li><a href="https://www.gstc.org.cn/newsDetail/160700/80320" target="_blank" rel="noreferrer">体彩中心公告：大乐透固定套餐票产品结构（2026 年 10 月）</a></li>
       <li><a href="https://zhs.mof.gov.cn/zhengcefabu/202601/t20260116_3982035.htm" target="_blank" rel="noreferrer">财政部：双色球规则变更审批意见</a></li>
       <li><a href="https://www.shantou.gov.cn/mzj/flcp/fcyw/content/post_2507332.html" target="_blank" rel="noreferrer">中国福彩规则变更公告（2026 年起执行）</a></li>

@@ -12,6 +12,12 @@
     66: { singles: 5, multiples: [{ front: 6, back: 3 }, { front: 5, back: 5 }] },
     88: { singles: 5, multiples: [{ front: 7, back: 2 }, { front: 6, back: 3 }] }
   };
+  const QUICK_GAMES = {
+    p3: { label: '排列3', type: 'digits', length: 3 },
+    p5: { label: '排列5', type: 'digits', length: 5 },
+    fc3d: { label: '福彩3D', type: 'digits', length: 3 },
+    kl8: { label: '快乐8', type: 'numbers', max: 80 }
+  };
   const data = loadData();
   const ui = {
     view: 'today', rollPending: false, ...data.lottery
@@ -134,6 +140,7 @@
       dltRandomBackCount: Math.max(2, Math.min(12, Math.floor(Number(source.dltRandomBackCount) || 3))),
       ssqRandomRedCount: Math.max(6, Math.min(33, Math.floor(Number(source.ssqRandomRedCount) || 7))),
       ssqRandomBlueCount: Math.max(1, Math.min(16, Math.floor(Number(source.ssqRandomBlueCount) || 2))),
+      quickK8PlayCount: Math.max(1, Math.min(10, Math.floor(Number(source.quickK8PlayCount) || 5))),
       packageAmount: amount, packageTarget: String(source.packageTarget || 's1'),
       packageDrafts: cleanPackageDrafts(source.packageDrafts), dltBankerResult,
       savedDlt: cleanSavedTickets(source.savedDlt, 'dlt'), savedSsq: cleanSavedTickets(source.savedSsq, 'ssq')
@@ -142,18 +149,73 @@
 
   function cleanRecord(row) {
     if (!row || typeof row !== 'object' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return null;
-    const dice = Math.floor(Number(row.dice));
-    if (dice < 1 || dice > 6) return null;
-    const bought = [2, 4, 6].includes(dice);
+    const diceValue = Math.floor(Number(row.dice));
+    const dice = diceValue >= 1 && diceValue <= 6 ? diceValue : null;
+    const bought = dice !== null && [2, 4, 6].includes(dice);
     const spend = Number(row.spend);
     const win = Number(row.win);
+    const tickets = Array.isArray(row.tickets) ? row.tickets.map(cleanDailyTicket).filter(Boolean).slice(-500) : [];
+    if (dice === null && tickets.length === 0) return null;
     return {
       date: row.date,
       dice,
       bought,
       spend: bought && Number.isFinite(spend) && spend >= 0 ? spend : 0,
-      win: Number.isFinite(win) && win >= 0 ? win : 0
+      win: Number.isFinite(win) && win >= 0 ? win : 0,
+      tickets
     };
+  }
+
+  function cleanDailyTicket(ticket) {
+    if (!ticket || typeof ticket !== 'object') return null;
+    const id = String(ticket.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `${ticket.game}-${Date.now()}`;
+    const recordedAt = /^\d{4}-\d{2}-\d{2}T/.test(ticket.recordedAt || '') ? String(ticket.recordedAt).slice(0, 25) : new Date().toISOString();
+    if (QUICK_GAMES[ticket.game]) {
+      const game = QUICK_GAMES[ticket.game];
+      const numbers = Array.isArray(ticket.numbers) ? ticket.numbers.map(Number) : [];
+      const validDigits = game.type === 'digits' && numbers.length === game.length && numbers.every(value => Number.isInteger(value) && value >= 0 && value <= 9);
+      const validKeno = game.type === 'numbers' && numbers.length >= 1 && numbers.length <= 10 && numbers.every(value => Number.isInteger(value) && value >= 1 && value <= game.max) && new Set(numbers).size === numbers.length;
+      if (!validDigits && !validKeno) return null;
+      return {
+        id, game: ticket.game,
+        play: game.type === 'numbers' ? `选${numbers.length}` : '直选单式',
+        numbers: game.type === 'numbers' ? [...numbers].sort((a, b) => a - b) : numbers,
+        cost: 2, recordedAt
+      };
+    }
+    if (ticket.game !== 'dlt' && ticket.game !== 'ssq') return null;
+    const kind = ['single', 'multiple', 'banker', 'package'].includes(ticket.kind) ? ticket.kind : null;
+    const lines = Math.floor(Number(ticket.lines));
+    const cost = Number(ticket.cost);
+    if (!kind || !Number.isInteger(lines) || lines < 1 || lines > 10000 || !Number.isFinite(cost) || cost < 0) return null;
+    const maxFront = ticket.game === 'dlt' ? 35 : 33;
+    const maxBack = ticket.game === 'dlt' ? 12 : 16;
+    const clean = {
+      id, game: ticket.game, kind,
+      label: String(ticket.label || (ticket.game === 'dlt' ? '大乐透随机号码' : '双色球随机号码')).slice(0, 100),
+      play: String(ticket.play || ticket.label || '').slice(0, 100),
+      lines, cost: Math.round(cost * 100) / 100,
+      front: cleanNumbers(ticket.front, maxFront), back: cleanNumbers(ticket.back, maxBack), recordedAt
+    };
+    if (kind === 'package') {
+      const amount = Number(ticket.amount);
+      if (ticket.game !== 'dlt' || !DLT_PACKAGES[amount] || !Array.isArray(ticket.components)) return null;
+      clean.amount = amount;
+      clean.components = ticket.components.map(component => ({
+        label: String(component.label || '组合').slice(0, 30),
+        kind: component.kind === 'multiple' ? 'multiple' : 'single',
+        front: cleanNumbers(component.front, 35), back: cleanNumbers(component.back, 12)
+      }));
+      if (!clean.components.length) return null;
+    }
+    if (kind === 'banker') {
+      if (ticket.game !== 'dlt') return null;
+      const banker = cleanBankerResult({ front: ticket.banker?.front, back: ticket.banker?.back, lines });
+      if (!banker) return null;
+      clean.banker = { front: banker.front, back: banker.back };
+    }
+    if ((kind === 'single' || kind === 'multiple') && (!clean.front.length || !clean.back.length)) return null;
+    return clean;
   }
 
   function persist() {
@@ -219,6 +281,11 @@
     return data.records.find(record => record.date === dateKey);
   }
 
+  function totalRecordSpend(record) {
+    if (!record) return 0;
+    return record.spend + (record.tickets || []).reduce((total, ticket) => total + ticket.cost, 0);
+  }
+
   function upsertRecord(record) {
     const index = data.records.findIndex(item => item.date === record.date);
     if (index >= 0) data.records[index] = record;
@@ -240,7 +307,7 @@
 
   function totals() {
     return data.records.reduce((result, record) => {
-      result.spend += record.spend;
+      result.spend += totalRecordSpend(record);
       result.win += record.win;
       return result;
     }, { spend: 0, win: 0 });
@@ -266,6 +333,8 @@
   function renderToday() {
     const dateKey = todayKey();
     const record = getRecord(dateKey);
+    const hasDice = Boolean(record && record.dice);
+    const daySpend = totalRecordSpend(record);
     document.getElementById('today-date').textContent = formatDate(dateKey, true);
     const title = document.getElementById('decision-title');
     const detail = document.getElementById('decision-detail');
@@ -276,19 +345,21 @@
     const winInput = document.getElementById('today-win');
     const saveButton = document.getElementById('save-today-win');
 
-    if (!record) {
+    if (!hasDice) {
       renderDie(null);
-      kicker.textContent = '轮到好运气做决定';
-      title.textContent = '掷一下，看看今天';
-      detail.textContent = '1、3、5 休息 · 2、4、6 购彩';
-      spend.textContent = '¥ —';
+      kicker.textContent = record?.tickets?.length ? '今天的随机号码已记入记录' : '轮到好运气做决定';
+      title.textContent = record?.tickets?.length ? '今天的号码和支出已保存' : '掷一下，看看今天';
+      detail.textContent = record?.tickets?.length
+        ? `已记录 ${record.tickets.length} 注、${money(daySpend)}；仍可掷骰子记录今日决定。`
+        : '1、3、5 休息 · 2、4、6 购彩';
+      spend.textContent = daySpend > 0 ? money(daySpend) : '¥ —';
       rollButton.disabled = ui.rollPending;
       rollButton.innerHTML = '<span class="button-icon">↻</span>掷骰子';
-      lockedHint.textContent = '掷出后会自动保存，今天不能重复掷。';
-      winInput.disabled = true;
-      winInput.value = '';
-      saveButton.disabled = true;
-      document.getElementById('today-feedback').textContent = '先掷骰子，开始今天的记录。';
+      lockedHint.textContent = record?.tickets?.length ? '今天已经记录的随机号码不会因掷骰子而覆盖。' : '掷出后会自动保存，今天不能重复掷。';
+      winInput.disabled = !record;
+      winInput.value = record?.win || '';
+      saveButton.disabled = !record;
+      document.getElementById('today-feedback').textContent = record ? '填入实际中奖金额并保存；未中奖可填 0。' : '先掷骰子或生成随机号码，开始今天的记录。';
       return;
     }
 
@@ -304,14 +375,46 @@
     if (record.bought) {
       kicker.textContent = `今天掷到 ${record.dice} · 随机选定购彩金额`;
       title.textContent = '今天按计划购彩';
-      detail.textContent = '可按这个金额购买所选玩法的彩票。';
-      spend.textContent = money(record.spend);
+      detail.textContent = record.tickets?.length
+        ? `骰子金额 ${money(record.spend)}，另有 ${record.tickets.length} 注随机号码；今日共记 ${money(daySpend)}。`
+        : '可按这个金额购买所选玩法的彩票。';
+      spend.textContent = money(daySpend);
     } else {
       kicker.textContent = `今天掷到 ${record.dice} · 休息日`;
       title.textContent = '今天不购彩';
-      detail.textContent = '把预算留在手里，也是一种好选择。';
-      spend.textContent = money(0);
+      detail.textContent = record.tickets?.length
+        ? `骰子建议休息；今天另记了 ${record.tickets.length} 注随机号码，合计 ${money(daySpend)}。`
+        : '把预算留在手里，也是一种好选择。';
+      spend.textContent = money(daySpend);
     }
+  }
+
+  function quickTicketNumbers(ticket) {
+    const game = QUICK_GAMES[ticket.game];
+    if (game?.type === 'digits') return ticket.numbers.join('');
+    if (game?.type === 'numbers') return ticket.numbers.map(value => String(value).padStart(2, '0')).join(' ');
+    const format = values => values.map(value => String(value).padStart(2, '0')).join(' ');
+    if (ticket.kind === 'package') {
+      return ticket.components.map(component => `${component.label} ${format(component.front)} + ${format(component.back)}`).join('；');
+    }
+    if (ticket.kind === 'banker') {
+      const group = (name, value) => !value ? '' : value.plain
+        ? `${name} ${format(value.drags)}`
+        : `${name}胆 ${format(value.bankers)} 拖 ${format(value.drags)}`;
+      return [group('前区', ticket.banker.front), group('后区', ticket.banker.back)].filter(Boolean).join('；') + ` · ${ticket.lines} 注`;
+    }
+    return `${format(ticket.front)} + ${format(ticket.back)}${ticket.lines > 1 ? ` · ${ticket.lines} 注` : ''}`;
+  }
+
+  function dailyTicketTitle(ticket) {
+    return QUICK_GAMES[ticket.game]?.label
+      ? `${QUICK_GAMES[ticket.game].label} · ${ticket.play}`
+      : ticket.label;
+  }
+
+  function dailyTicketsMarkup(tickets) {
+    if (!tickets?.length) return '<span class="record-no-tickets">—</span>';
+    return `<div class="daily-ticket-list">${tickets.map(ticket => `<div class="daily-ticket"><strong>${escapeHtml(dailyTicketTitle(ticket))}</strong><span>${escapeHtml(quickTicketNumbers(ticket))}</span><em>${money(ticket.cost)}</em></div>`).join('')}</div>`;
   }
 
   function renderRecords() {
@@ -321,12 +424,17 @@
     document.getElementById('record-count').textContent = `${records.length} 条`;
     empty.classList.toggle('visible', records.length === 0);
     body.innerHTML = records.map(record => {
-      const net = record.win - record.spend;
+      const daySpend = totalRecordSpend(record);
+      const net = record.win - daySpend;
+      const result = record.dice
+        ? (record.bought ? '骰子 · 购彩' : '骰子 · 休息')
+        : '仅选号记录';
       return `<tr>
         <td>${formatDate(record.date)}</td>
-        <td><span class="dice-pill">${record.dice}</span></td>
-        <td class="${record.bought ? 'status-bought' : 'status-rest'}">${record.bought ? '购彩 · ' + money(record.spend) : '休息'}</td>
-        <td class="table-spend">${money(record.spend)}</td>
+        <td>${record.dice ? `<span class="dice-pill">${record.dice}</span>` : '<span class="record-no-tickets">—</span>'}</td>
+        <td class="${record.bought ? 'status-bought' : 'status-rest'}">${result}</td>
+        <td>${dailyTicketsMarkup(record.tickets)}</td>
+        <td class="table-spend">${money(daySpend)}</td>
         <td><input class="table-win-input" type="number" min="0" step="0.01" inputmode="decimal" value="${record.win || ''}" placeholder="0" aria-label="${formatDate(record.date)}中奖金额"></td>
         <td class="${net >= 0 ? 'net-positive' : 'net-negative'}">${money(net)}</td>
         <td><button class="table-save" type="button" data-save-win="${record.date}">保存</button></td>
@@ -343,12 +451,14 @@
     if (viewName === 'records') renderRecords();
     if (viewName === 'dlt') renderDlt();
     if (viewName === 'ssq') renderSsq();
+    if (viewName === 'quick-picks') renderQuickPicks();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function rollToday() {
     const date = todayKey();
-    if (getRecord(date) || ui.rollPending) return;
+    const existing = getRecord(date);
+    if (existing?.dice || ui.rollPending) return;
     ui.rollPending = true;
     document.getElementById('roll-dice').disabled = true;
     const die = document.getElementById('die');
@@ -358,7 +468,11 @@
     const spendOptions = [10, 20, 30, 50];
     const spend = bought ? spendOptions[randomInt(spendOptions.length)] : 0;
     window.setTimeout(() => {
-      upsertRecord({ date, dice, bought, spend, win: 0 });
+      const latestRecord = getRecord(date);
+      upsertRecord({
+        ...(latestRecord || {}), date, dice, bought, spend,
+        win: latestRecord?.win || 0, tickets: latestRecord?.tickets || []
+      });
       ui.rollPending = false;
       renderToday();
       renderTotals();
@@ -480,7 +594,7 @@
       }).join('')}</div>
       <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> ${escapeHtml(target.label)} · 前区号码</strong><span>请选择 ${target.frontCount} 个</span></div>${ballGrid(35, selection.front, 'package-front')}</div>
       <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> ${escapeHtml(target.label)} · 后区号码</strong><span>请选择 ${target.backCount} 个</span></div>${ballGrid(12, selection.back, 'package-back')}</div>
-      <div class="tool-actions"><span class="ticket-cost">固定价格<strong>${money(ui.packageAmount)}</strong></span><div class="inline-controls"><button class="light-button" id="random-package-part">随机当前组合</button><button class="light-button" id="random-package-all">整套随机选号</button><button class="light-button" id="clear-package-part">清空当前</button><button class="primary-button" id="save-dlt-ticket" ${packageReady(entries) ? '' : 'disabled'}>保存号码</button></div></div>
+      <div class="tool-actions"><span class="ticket-cost">整套金额固定<strong>${money(ui.packageAmount)}</strong><span class="muted-cost">号码齐全后计入支出</span></span><div class="inline-controls"><button class="light-button" id="random-package-part">随机当前组合</button><button class="light-button" id="random-package-all">整套随机并记支出</button><button class="light-button" id="clear-package-part">清空当前</button><button class="primary-button" id="save-dlt-ticket" ${packageReady(entries) ? '' : 'disabled'}>保存号码</button></div></div>
       ${renderPackageResult(entries)}${savedTicketsMarkup('dlt')}`;
   }
 
@@ -492,7 +606,7 @@
       content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选满 5 个前区和 2 个后区号码，或使用随机选号。</p></div><span class="tiny-note">5 + 2 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 前区号码</strong><span>已选 ${ui.dltFront.length} / 5</span></div>${ballGrid(35, ui.dltFront, 'dlt-front')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 后区号码</strong><span>已选 ${ui.dltBack.length} / 2</span></div>${ballGrid(12, ui.dltBack, 'dlt-back')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注 <span>→</span></button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('dlt')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注并记支出 <span>→</span></button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('dlt')}`;
       return;
     }
     if (ui.dltMode === 'multiple') {
@@ -507,7 +621,7 @@
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 前区号码</strong><span>已选 ${ui.dltFront.length} 个 · 需至少 5 个</span></div>${ballGrid(35, ui.dltFront, 'dlt-front')}<div class="helper-row"><span>01–35 中选择号码</span><span>${ui.dltFront.length > 5 ? `${combination(ui.dltFront.length, 5)} 种前区组合` : ''}</span></div></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 后区号码</strong><span>已选 ${ui.dltBack.length} 个 · 需至少 2 个</span></div>${ballGrid(12, ui.dltBack, 'dlt-back')}<div class="helper-row"><span>01–12 中选择号码</span><span>${ui.dltBack.length > 2 ? `${combination(ui.dltBack.length, 2)} 种后区组合` : ''}</span></div></div>
         <div class="choice-row random-counts"><span class="select-label">随机选号数量</span><label for="dlt-random-front-count">前区</label><select id="dlt-random-front-count" class="select-field">${frontOptions.map(count => `<option value="${count}" ${count === ui.dltRandomFrontCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><label for="dlt-random-back-count">后区</label><select id="dlt-random-back-count" class="select-field">${backOptions.map(count => `<option value="${count}" ${count === ui.dltRandomBackCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><span class="subtle-caption">${randomValid ? `随机后为 ${randomLines.toLocaleString('zh-CN')} 注 · ${money(randomLines * 2)}` : '组合超过单票金额上限，请减少号码数'}</span></div>
-        <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(cost)}</span>` : `<span>${lineCount > DLT_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-dlt-multiple" ${randomValid ? '' : 'disabled'}>按指定数量随机</button><button class="light-button" id="clear-dlt-multiple">清空</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
+        <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(cost)}</span>` : `<span>${lineCount > DLT_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-dlt-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" id="clear-dlt-multiple">清空</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
         ${!valid && lineCount > DLT_MAX_BETS ? '<p class="subtle-caption">请减少已选号码；当前票面超过单张彩票的金额上限。</p>' : ''}${savedTicketsMarkup('dlt')}`;
       return;
     }
@@ -522,7 +636,7 @@
         <div class="choice-row"><label class="select-label" for="banker-kind">胆拖区域</label><select id="banker-kind" class="select-field"><option value="both" ${mode === 'both' ? 'selected' : ''}>前后区双区胆拖</option><option value="front" ${mode === 'front' ? 'selected' : ''}>仅前区胆拖</option><option value="back" ${mode === 'back' ? 'selected' : ''}>仅后区胆拖</option></select></div>
         ${showFront ? `<div class="choice-row"><label class="select-label" for="front-bankers">前区胆码</label><select id="front-bankers" class="select-field">${[1,2,3,4].map(n => `<option value="${n}" ${n === frontBankers ? 'selected' : ''}>${n} 个</option>`).join('')}</select><label class="select-label" for="front-total">前区总数</label><select id="front-total" class="select-field">${[6,7,8,9,10,11,12].map(n => `<option value="${n}" ${n === frontTotal ? 'selected' : ''}>${n} 个</option>`).join('')}</select></div>` : ''}
         ${showBack ? `<div class="choice-row"><label class="select-label" for="back-total">后区总数</label><select id="back-total" class="select-field">${[3,4,5,6,7,8].map(n => `<option value="${n}" ${n === backTotal ? 'selected' : ''}>${n} 个</option>`).join('')}</select><span class="subtle-caption">含 1 个后区胆码，至少 2 个拖码</span></div>` : ''}
-        <div class="tool-actions"><span class="ticket-cost">按选定结构随机号码并自动计价</span><div class="inline-controls"><button class="primary-button" id="random-dlt-banker">随机生成胆拖 <span>→</span></button><button class="light-button" id="save-dlt-ticket" ${ui.dltBankerResult ? '' : 'disabled'}>保存号码</button></div></div>${renderBankerResult()}${savedTicketsMarkup('dlt')}`;
+        <div class="tool-actions"><span class="ticket-cost">随机后会按注数计价并记入今日支出</span><div class="inline-controls"><button class="primary-button" id="random-dlt-banker">随机生成并记支出 <span>→</span></button><button class="light-button" id="save-dlt-ticket" ${ui.dltBankerResult ? '' : 'disabled'}>保存号码</button></div></div>${renderBankerResult()}${savedTicketsMarkup('dlt')}`;
       return;
     }
     renderPackageMode(content);
@@ -685,10 +799,10 @@
     const content = document.getElementById('ssq-mode-content');
     if (ui.ssqMode === 'single') {
       const valid = ui.ssqRed.length === 6 && ui.ssqBlue.length === 1;
-      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选择 6 个红球和 1 个蓝球，或随机生成一注。</p></div><span class="tiny-note">6 + 1 · ¥2</span></div>
+      content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选择 6 个红球和 1 个蓝球；随机生成会计入今天的花费。</p></div><span class="tiny-note">6 + 1 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 红色球</strong><span>已选 ${ui.ssqRed.length} / 6</span></div>${ballGrid(33, ui.ssqRed, 'ssq-red', 'red-ball')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 蓝色球</strong><span>已选 ${ui.ssqBlue.length} / 1</span></div>${ballGrid(16, ui.ssqBlue, 'ssq-blue', 'blue-ball')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注 <span>→</span></button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('ssq')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注并记支出 <span>→</span></button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('ssq')}`;
       return;
     }
     const lineCount = combination(ui.ssqRed.length, 6) * ui.ssqBlue.length;
@@ -701,12 +815,65 @@
       <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 红色球</strong><span>已选 ${ui.ssqRed.length} 个 · 需至少 6 个</span></div>${ballGrid(33, ui.ssqRed, 'ssq-red', 'red-ball')}<div class="helper-row"><span>01–33 中选择号码</span><span>${ui.ssqRed.length > 6 ? `${combination(ui.ssqRed.length, 6)} 种红球组合` : ''}</span></div></div>
       <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 蓝色球</strong><span>已选 ${ui.ssqBlue.length} 个 · 需至少 1 个</span></div>${ballGrid(16, ui.ssqBlue, 'ssq-blue', 'blue-ball')}<div class="helper-row"><span>01–16 中选择号码</span><span>${ui.ssqBlue.length > 1 ? `${ui.ssqBlue.length} 种蓝球组合` : ''}</span></div></div>
       <div class="choice-row random-counts"><span class="select-label">随机选号数量</span><label for="ssq-random-red-count">红球</label><select id="ssq-random-red-count" class="select-field">${redOptions.map(count => `<option value="${count}" ${count === ui.ssqRandomRedCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><label for="ssq-random-blue-count">蓝球</label><select id="ssq-random-blue-count" class="select-field">${blueOptions.map(count => `<option value="${count}" ${count === ui.ssqRandomBlueCount ? 'selected' : ''}>${count} 个</option>`).join('')}</select><span class="subtle-caption">${randomValid ? `随机后为 ${randomLines.toLocaleString('zh-CN')} 注 · ${money(randomLines * 2)}` : '组合超过单票金额上限，请减少号码数'}</span></div>
-      <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(lineCount * 2)}</span>` : `<span>${lineCount > SSQ_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-ssq-multiple" ${randomValid ? '' : 'disabled'}>按指定数量随机</button><button class="light-button" id="clear-ssq-multiple">清空</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
+      <div class="tool-actions"><div class="ticket-cost">${valid ? `组合注数 <strong>${lineCount.toLocaleString('zh-CN')} 注</strong><span class="muted-cost">应付 ${money(lineCount * 2)}</span>` : `<span>${lineCount > SSQ_MAX_BETS ? '金额超过单票 20,000 元上限' : '请按要求选择号码'}</span>`}</div><div class="inline-controls"><button class="light-button" id="random-ssq-multiple" ${randomValid ? '' : 'disabled'}>随机并记支出</button><button class="light-button" id="clear-ssq-multiple">清空</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>
       ${!valid && lineCount > SSQ_MAX_BETS ? '<p class="subtle-caption">请减少已选号码；当前票面超过单张彩票的金额上限。</p>' : ''}${savedTicketsMarkup('ssq')}`;
   }
 
   function createSsqTicket() {
     return { front: randomUnique(33, 6), back: randomUnique(16, 1) };
+  }
+
+  function renderQuickPicks() {
+    const host = document.getElementById('quick-games-content');
+    if (!host) return;
+    const today = getRecord(todayKey());
+    const tickets = (today?.tickets || []).slice().reverse();
+    const kenoOptions = Array.from({ length: 10 }, (_, index) => index + 1);
+    host.innerHTML = `<div class="quick-games-grid">
+      <article class="quick-game-card"><div class="quick-game-heading"><span class="quick-game-icon">3</span><div><h2>排列3</h2><p>百位、十位、个位各随机 0–9，按直选单式计。</p></div></div><div class="quick-game-meta"><span>直选 · 3 位有序数字</span><strong>¥2 / 注</strong></div><button class="primary-button full-width" data-quick-pick="p3">随机一注并记支出</button></article>
+      <article class="quick-game-card"><div class="quick-game-heading"><span class="quick-game-icon">5</span><div><h2>排列5</h2><p>从 00000–99999 随机一个五位数，按单式计。</p></div></div><div class="quick-game-meta"><span>5 位有序数字</span><strong>¥2 / 注</strong></div><button class="primary-button full-width" data-quick-pick="p5">随机一注并记支出</button></article>
+      <article class="quick-game-card"><div class="quick-game-heading"><span class="quick-game-icon">3D</span><div><h2>福彩3D</h2><p>百位、十位、个位各随机 0–9，按单选计。</p></div></div><div class="quick-game-meta"><span>单选 · 3 位有序数字</span><strong>¥2 / 注</strong></div><button class="primary-button full-width" data-quick-pick="fc3d">随机一注并记支出</button></article>
+      <article class="quick-game-card"><div class="quick-game-heading"><span class="quick-game-icon">快</span><div><h2>快乐8</h2><p>从 01–80 随机号码，选择玩法后生成一注。</p></div></div><label class="quick-k8-control" for="quick-k8-count"><span>玩法</span><select id="quick-k8-count" class="select-field">${kenoOptions.map(count => `<option value="${count}" ${count === ui.quickK8PlayCount ? 'selected' : ''}>选${count}</option>`).join('')}</select><strong>¥2 / 注</strong></label><button class="primary-button full-width" data-quick-pick="kl8">随机一注并记支出</button></article>
+    </div>
+    <section class="records-card quick-today-records"><div class="records-card-heading"><div><h2>今天生成的号码</h2><p>随机生成后会新增记录，并将对应支出计入今天。</p></div><span class="count-pill">${tickets.length} 组 · ${money(tickets.reduce((sum, ticket) => sum + ticket.cost, 0))}</span></div>
+      ${tickets.length ? `<div class="quick-ticket-list">${tickets.map(ticket => `<div class="quick-ticket-record"><div><strong>${escapeHtml(dailyTicketTitle(ticket))}</strong><small>${escapeHtml(ticket.recordedAt.replace('T', ' ').slice(0, 16))}</small></div><span>${escapeHtml(quickTicketNumbers(ticket))}</span><em>${money(ticket.cost)}</em></div>`).join('')}</div>` : '<div class="empty-result">今天还没有生成随机号码。</div>'}
+    </section>`;
+  }
+
+  function appendDailyTicket(ticketData) {
+    const ticket = cleanDailyTicket(ticketData);
+    if (!ticket) return;
+    const date = todayKey();
+    const record = getRecord(date) || { date, dice: null, bought: false, spend: 0, win: 0, tickets: [] };
+    record.tickets = [...(record.tickets || []), ticket].slice(-500);
+    upsertRecord(record);
+    renderQuickPicks();
+    renderToday();
+    renderRecords();
+  }
+
+  function addLotteryRandomTicket(game, snapshot) {
+    if (!snapshot) return;
+    appendDailyTicket({
+      ...snapshot,
+      id: `${game}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      game, play: snapshot.label, cost: snapshot.price,
+      recordedAt: new Date().toISOString()
+    });
+  }
+
+  function addQuickPick(gameKey) {
+    const game = QUICK_GAMES[gameKey];
+    if (!game) return;
+    const numbers = game.type === 'digits'
+      ? Array.from({ length: game.length }, () => randomInt(10))
+      : randomUnique(game.max, ui.quickK8PlayCount);
+    const ticket = cleanDailyTicket({
+      id: `${gameKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      game: gameKey, numbers, recordedAt: new Date().toISOString()
+    });
+    if (!ticket) return;
+    appendDailyTicket(ticket);
   }
 
   document.addEventListener('click', event => {
@@ -716,6 +883,8 @@
       showView(nav.dataset.nav);
       return;
     }
+    const quickPick = event.target.closest('[data-quick-pick]');
+    if (quickPick) { addQuickPick(quickPick.dataset.quickPick); return; }
     const dltMode = event.target.closest('[data-dlt-mode]');
     if (dltMode) {
       syncCurrentDraft();
@@ -759,45 +928,54 @@
     }
     if (event.target.closest('#roll-dice')) { rollToday(); return; }
     if (event.target.closest('#save-today-win')) { saveWin(todayKey(), document.getElementById('today-win')); return; }
-    if (event.target.closest('#random-dlt-single')) { const ticket = createDltTicket(); ui.dltFront = ticket.front; ui.dltBack = ticket.back; ui.savedNotice = ''; persistLottery(); renderDlt(); return; }
+    if (event.target.closest('#random-dlt-single')) { const ticket = createDltTicket(); ui.dltFront = ticket.front; ui.dltBack = ticket.back; ui.savedNotice = ''; persistLottery(); addLotteryRandomTicket('dlt', { kind: 'single', label: '大乐透单式', lines: 1, price: 2, front: ticket.front, back: ticket.back }); renderDlt(); return; }
     if (event.target.closest('#clear-dlt-single')) { ui.dltFront = []; ui.dltBack = []; ui.savedNotice = ''; persistLottery(); renderDlt(); return; }
     if (event.target.closest('#random-dlt-multiple')) {
       ui.dltRandomFrontCount = Number(document.getElementById('dlt-random-front-count').value);
       ui.dltRandomBackCount = Number(document.getElementById('dlt-random-back-count').value);
       ui.dltFront = randomUnique(35, ui.dltRandomFrontCount);
       ui.dltBack = randomUnique(12, ui.dltRandomBackCount);
+      const lines = combination(ui.dltFront.length, 5) * combination(ui.dltBack.length, 2);
       ui.savedNotice = '';
       persistLottery();
+      addLotteryRandomTicket('dlt', { kind: 'multiple', label: `大乐透复式 ${ui.dltFront.length}+${ui.dltBack.length}`, lines, price: lines * 2, front: ui.dltFront, back: ui.dltBack });
       renderDlt();
       return;
     }
     if (event.target.closest('#clear-dlt-multiple')) { ui.dltFront = []; ui.dltBack = []; ui.savedNotice = ''; persistLottery(); renderDlt(); return; }
-    if (event.target.closest('#random-dlt-banker')) { ui.dltBankerResult = makeDltBankerResult(); ui.savedNotice = ''; persistLottery(); renderDlt(); return; }
+    if (event.target.closest('#random-dlt-banker')) { ui.dltBankerResult = makeDltBankerResult(); ui.savedNotice = ''; persistLottery(); addLotteryRandomTicket('dlt', currentTicketSnapshot('dlt')); renderDlt(); return; }
     if (event.target.closest('#random-package-part')) {
       const component = packageComponentDefinitions(ui.packageAmount).find(item => item.id === ui.packageTarget);
       ui.packageDrafts[ui.packageAmount][ui.packageTarget] = { front: randomUnique(35, component.frontCount), back: randomUnique(12, component.backCount) };
       ui.savedNotice = '';
-      persistLottery(); renderDlt(); return;
+      persistLottery();
+      if (packageReady()) addLotteryRandomTicket('dlt', currentTicketSnapshot('dlt'));
+      renderDlt(); return;
     }
     if (event.target.closest('#random-package-all')) {
       packageComponentDefinitions(ui.packageAmount).forEach(component => {
         ui.packageDrafts[ui.packageAmount][component.id] = { front: randomUnique(35, component.frontCount), back: randomUnique(12, component.backCount) };
       });
       ui.savedNotice = '';
-      persistLottery(); renderDlt(); return;
+      persistLottery();
+      addLotteryRandomTicket('dlt', currentTicketSnapshot('dlt'));
+      renderDlt(); return;
     }
     if (event.target.closest('#clear-package-part')) {
       ui.packageDrafts[ui.packageAmount][ui.packageTarget] = { front: [], back: [] };
       ui.savedNotice = '';
       persistLottery(); renderDlt(); return;
     }
-    if (event.target.closest('#random-ssq-single')) { const ticket = createSsqTicket(); ui.ssqRed = ticket.front; ui.ssqBlue = ticket.back; ui.savedNotice = ''; persistLottery(); renderSsq(); return; }
+    if (event.target.closest('#random-ssq-single')) { const ticket = createSsqTicket(); ui.ssqRed = ticket.front; ui.ssqBlue = ticket.back; ui.savedNotice = ''; persistLottery(); addLotteryRandomTicket('ssq', { kind: 'single', label: '双色球单式', lines: 1, price: 2, front: ticket.front, back: ticket.back }); renderSsq(); return; }
     if (event.target.closest('#clear-ssq-single')) { ui.ssqRed = []; ui.ssqBlue = []; ui.savedNotice = ''; persistLottery(); renderSsq(); return; }
     if (event.target.closest('#random-ssq-multiple')) {
       ui.ssqRandomRedCount = Number(document.getElementById('ssq-random-red-count').value);
       ui.ssqRandomBlueCount = Number(document.getElementById('ssq-random-blue-count').value);
       ui.ssqRed = randomUnique(33, ui.ssqRandomRedCount); ui.ssqBlue = randomUnique(16, ui.ssqRandomBlueCount);
-      ui.savedNotice = ''; persistLottery(); renderSsq(); return;
+      const lines = combination(ui.ssqRed.length, 6) * ui.ssqBlue.length;
+      ui.savedNotice = ''; persistLottery();
+      addLotteryRandomTicket('ssq', { kind: 'multiple', label: `双色球复式 ${ui.ssqRed.length}+${ui.ssqBlue.length}`, lines, price: lines * 2, front: ui.ssqRed, back: ui.ssqBlue });
+      renderSsq(); return;
     }
     if (event.target.closest('#clear-ssq-multiple')) { ui.ssqRed = []; ui.ssqBlue = []; ui.savedNotice = ''; persistLottery(); renderSsq(); return; }
     if (event.target.closest('#save-dlt-ticket')) { saveCurrentTicket('dlt'); return; }
@@ -826,6 +1004,12 @@
   });
 
   document.addEventListener('change', event => {
+    if (event.target.id === 'quick-k8-count') {
+      ui.quickK8PlayCount = Number(event.target.value);
+      persistLottery();
+      renderQuickPicks();
+      return;
+    }
     if (['banker-kind', 'front-bankers', 'front-total', 'back-total'].includes(event.target.id) && ui.dltMode === 'dan-tuo') {
       ui.dltBankerResult = null;
       ui.savedNotice = '';
@@ -854,9 +1038,11 @@
   });
 
   function exportCsv() {
-    const rows = [['日期', '骰子', '是否购彩', '花费金额', '中奖金额', '净收支']];
+    const rows = [['日期', '骰子点数', '骰子结果', '随机号码 / 玩法', '花费金额', '中奖金额', '净收支']];
     [...data.records].sort((a, b) => a.date.localeCompare(b.date)).forEach(record => {
-      rows.push([record.date, record.dice, record.bought ? '是' : '否', record.spend.toFixed(2), record.win.toFixed(2), (record.win - record.spend).toFixed(2)]);
+      const ticketSummary = (record.tickets || []).map(ticket => `${QUICK_GAMES[ticket.game]?.label || ticket.game} ${ticket.play} ${quickTicketNumbers(ticket)} ${money(ticket.cost)}`).join('；');
+      const daySpend = totalRecordSpend(record);
+      rows.push([record.date, record.dice || '', record.dice ? (record.bought ? '购彩' : '休息') : '', ticketSummary, daySpend.toFixed(2), record.win.toFixed(2), (record.win - daySpend).toFixed(2)]);
     });
     const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -873,4 +1059,5 @@
   renderTotals();
   renderDlt();
   renderSsq();
+  renderQuickPicks();
 })();
