@@ -38,6 +38,19 @@
     return [...new Set(values.map(Number).filter(value => Number.isInteger(value) && value >= 1 && value <= max))].sort((a, b) => a - b);
   }
 
+  function cleanFiveDraft(values, game) {
+    if (!Array.isArray(values)) return [];
+    const frontCount = game === 'dlt' ? 5 : 6;
+    const backCount = game === 'dlt' ? 2 : 1;
+    const maxFront = game === 'dlt' ? 35 : 33;
+    const maxBack = game === 'dlt' ? 12 : 16;
+    const tickets = values.map(ticket => ({
+      front: cleanNumbers(ticket?.front, maxFront),
+      back: cleanNumbers(ticket?.back, maxBack)
+    })).filter(ticket => ticket.front.length === frontCount && ticket.back.length === backCount).slice(0, 5);
+    return tickets.length === 5 ? tickets : [];
+  }
+
   function packageComponentDefinitions(amount) {
     const format = DLT_PACKAGES[amount];
     if (!format) return [];
@@ -141,6 +154,8 @@
       ssqRandomRedCount: Math.max(6, Math.min(33, Math.floor(Number(source.ssqRandomRedCount) || 7))),
       ssqRandomBlueCount: Math.max(1, Math.min(16, Math.floor(Number(source.ssqRandomBlueCount) || 2))),
       quickK8PlayCount: Math.max(1, Math.min(10, Math.floor(Number(source.quickK8PlayCount) || 5))),
+      dltFiveDraft: cleanFiveDraft(source.dltFiveDraft, 'dlt'),
+      ssqFiveDraft: cleanFiveDraft(source.ssqFiveDraft, 'ssq'),
       packageAmount: amount, packageTarget: String(source.packageTarget || 's1'),
       packageDrafts: cleanPackageDrafts(source.packageDrafts), dltBankerResult,
       savedDlt: cleanSavedTickets(source.savedDlt, 'dlt'), savedSsq: cleanSavedTickets(source.savedSsq, 'ssq')
@@ -184,7 +199,7 @@
       };
     }
     if (ticket.game !== 'dlt' && ticket.game !== 'ssq') return null;
-    const kind = ['single', 'multiple', 'banker', 'package'].includes(ticket.kind) ? ticket.kind : null;
+    const kind = ['single', 'multiple', 'banker', 'package', 'batch'].includes(ticket.kind) ? ticket.kind : null;
     const lines = Math.floor(Number(ticket.lines));
     const cost = Number(ticket.cost);
     if (!kind || !Number.isInteger(lines) || lines < 1 || lines > 10000 || !Number.isFinite(cost) || cost < 0) return null;
@@ -197,6 +212,16 @@
       lines, cost: Math.round(cost * 100) / 100,
       front: cleanNumbers(ticket.front, maxFront), back: cleanNumbers(ticket.back, maxBack), recordedAt
     };
+    if (kind === 'batch') {
+      if (!Array.isArray(ticket.bets) || ticket.game !== 'dlt' && ticket.game !== 'ssq') return null;
+      const frontCount = ticket.game === 'dlt' ? 5 : 6;
+      const backCount = ticket.game === 'dlt' ? 2 : 1;
+      clean.bets = ticket.bets.map(bet => ({
+        front: cleanNumbers(bet?.front, maxFront),
+        back: cleanNumbers(bet?.back, maxBack)
+      })).filter(bet => bet.front.length === frontCount && bet.back.length === backCount).slice(0, 100);
+      if (clean.bets.length < 2 || clean.bets.length !== lines || clean.cost !== clean.bets.length * 2) return null;
+    }
     if (kind === 'package') {
       const amount = Number(ticket.amount);
       if (ticket.game !== 'dlt' || !DLT_PACKAGES[amount] || !Array.isArray(ticket.components)) return null;
@@ -286,6 +311,10 @@
     return record.spend + (record.tickets || []).reduce((total, ticket) => total + ticket.cost, 0);
   }
 
+  function totalRecordLines(record) {
+    return (record?.tickets || []).reduce((total, ticket) => total + (Number(ticket.lines) || 1), 0);
+  }
+
   function upsertRecord(record) {
     const index = data.records.findIndex(item => item.date === record.date);
     if (index >= 0) data.records[index] = record;
@@ -335,6 +364,7 @@
     const record = getRecord(dateKey);
     const hasDice = Boolean(record && record.dice);
     const daySpend = totalRecordSpend(record);
+    const ticketLines = totalRecordLines(record);
     document.getElementById('today-date').textContent = formatDate(dateKey, true);
     const title = document.getElementById('decision-title');
     const detail = document.getElementById('decision-detail');
@@ -350,7 +380,7 @@
       kicker.textContent = record?.tickets?.length ? '今天的随机号码已记入记录' : '轮到好运气做决定';
       title.textContent = record?.tickets?.length ? '今天的号码和支出已保存' : '掷一下，看看今天';
       detail.textContent = record?.tickets?.length
-        ? `已记录 ${record.tickets.length} 注、${money(daySpend)}；仍可掷骰子记录今日决定。`
+        ? `已记录 ${ticketLines} 注、${money(daySpend)}；仍可掷骰子记录今日决定。`
         : '1、3、5 休息 · 2、4、6 购彩';
       spend.textContent = daySpend > 0 ? money(daySpend) : '¥ —';
       rollButton.disabled = ui.rollPending;
@@ -376,14 +406,14 @@
       kicker.textContent = `今天掷到 ${record.dice} · 随机选定购彩金额`;
       title.textContent = '今天按计划购彩';
       detail.textContent = record.tickets?.length
-        ? `骰子金额 ${money(record.spend)}，另有 ${record.tickets.length} 注随机号码；今日共记 ${money(daySpend)}。`
+        ? `骰子金额 ${money(record.spend)}，另有 ${ticketLines} 注号码；今日共记 ${money(daySpend)}。`
         : '可按这个金额购买所选玩法的彩票。';
       spend.textContent = money(daySpend);
     } else {
       kicker.textContent = `今天掷到 ${record.dice} · 休息日`;
       title.textContent = '今天不购彩';
       detail.textContent = record.tickets?.length
-        ? `骰子建议休息；今天另记了 ${record.tickets.length} 注随机号码，合计 ${money(daySpend)}。`
+        ? `骰子建议休息；今天另记了 ${ticketLines} 注号码，合计 ${money(daySpend)}。`
         : '把预算留在手里，也是一种好选择。';
       spend.textContent = money(daySpend);
     }
@@ -394,6 +424,9 @@
     if (game?.type === 'digits') return ticket.numbers.join('');
     if (game?.type === 'numbers') return ticket.numbers.map(value => String(value).padStart(2, '0')).join(' ');
     const format = values => values.map(value => String(value).padStart(2, '0')).join(' ');
+    if (ticket.kind === 'batch') {
+      return ticket.bets.map((bet, index) => `${String(index + 1).padStart(2, '0')}. ${format(bet.front)} + ${format(bet.back)}`).join('\n');
+    }
     if (ticket.kind === 'package') {
       return ticket.components.map(component => `${component.label} ${format(component.front)} + ${format(component.back)}`).join('；');
     }
@@ -412,9 +445,14 @@
       : ticket.label;
   }
 
-  function dailyTicketsMarkup(tickets) {
+  function dailyTicketsMarkup(tickets, date) {
     if (!tickets?.length) return '<span class="record-no-tickets">—</span>';
-    return `<div class="daily-ticket-list">${tickets.map(ticket => `<div class="daily-ticket"><strong>${escapeHtml(dailyTicketTitle(ticket))}</strong><span>${escapeHtml(quickTicketNumbers(ticket))}</span><em>${money(ticket.cost)}</em></div>`).join('')}</div>`;
+    return `<div class="daily-ticket-list">${tickets.map(ticket => {
+      const numberMarkup = ticket.kind === 'batch'
+        ? `<div class="daily-ticket-lines">${ticket.bets.map((bet, index) => `<span><b>${String(index + 1).padStart(2, '0')}</b>${escapeHtml([...bet.front.map(value => String(value).padStart(2, '0')), '+', ...bet.back.map(value => String(value).padStart(2, '0'))].join(' '))}</span>`).join('')}</div>`
+        : `<span class="daily-ticket-numbers">${escapeHtml(quickTicketNumbers(ticket))}</span>`;
+      return `<div class="daily-ticket"><div class="daily-ticket-head"><strong>${escapeHtml(dailyTicketTitle(ticket))}</strong><em>${money(ticket.cost)}</em><button class="ticket-delete" type="button" data-delete-daily-ticket="${escapeHtml(ticket.id)}" data-delete-daily-date="${escapeHtml(date)}">删除</button></div>${numberMarkup}</div>`;
+    }).join('')}</div>`;
   }
 
   function renderRecords() {
@@ -433,11 +471,11 @@
         <td>${formatDate(record.date)}</td>
         <td>${record.dice ? `<span class="dice-pill">${record.dice}</span>` : '<span class="record-no-tickets">—</span>'}</td>
         <td class="${record.bought ? 'status-bought' : 'status-rest'}">${result}</td>
-        <td>${dailyTicketsMarkup(record.tickets)}</td>
+        <td>${dailyTicketsMarkup(record.tickets, record.date)}</td>
         <td class="table-spend">${money(daySpend)}</td>
         <td><input class="table-win-input" type="number" min="0" step="0.01" inputmode="decimal" value="${record.win || ''}" placeholder="0" aria-label="${formatDate(record.date)}中奖金额"></td>
         <td class="${net >= 0 ? 'net-positive' : 'net-negative'}">${money(net)}</td>
-        <td><button class="table-save" type="button" data-save-win="${record.date}">保存</button></td>
+        <td class="record-actions"><button class="table-save" type="button" data-save-win="${record.date}">保存</button><button class="table-delete" type="button" data-delete-record-date="${record.date}">删除当日</button></td>
       </tr>`;
     }).join('');
     renderTotals();
@@ -509,6 +547,11 @@
     if (!tickets.length) return '<div class="empty-result">生成的号码会显示在这里。</div>';
     const countText = totalCost === null ? `${tickets.length} 组` : `${tickets.length} 注 · ${money(totalCost)}`;
     return `<div class="result-area"><div class="result-heading"><strong>${totalCost === null ? '随机号码' : '号码预览'}</strong><span>${countText}</span></div>${tickets.map((ticket, index) => `<div class="ticket-row"><span class="ticket-index">${String(index + 1).padStart(2, '0')}</span>${miniBalls(ticket.front, 'red')}${sport ? '<span class="ticket-divider">＋</span>' : '<span class="ticket-divider">+</span>'}${miniBalls(ticket.back, 'blue')}</div>`).join('')}</div>`;
+  }
+
+  function fiveBetDraftMarkup(game, tickets, sport) {
+    const ready = tickets.length === 5;
+    return `<section class="five-bet-panel"><div><strong>批量随机 5 注</strong><small>先生成号码，再单独保存；保存后按 5 注计入 ¥10。</small></div><div class="inline-controls"><button class="light-button" id="random-${game}-five">随机5注</button><button class="primary-button" id="save-${game}-five" ${ready ? '' : 'disabled'}>保存5注并记支出</button><button class="light-button" id="clear-${game}-five" ${ready ? '' : 'disabled'}>清空</button></div></section>${ready ? ticketRows(tickets, sport, 10) : '<div class="empty-result five-bet-empty">点击“随机5注”生成号码；确认后再保存并计入当天支出。</div>'}`;
   }
 
   function escapeHtml(value) {
@@ -608,7 +651,7 @@
       content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选好号码后点“记入今日支出”；“保存号码”会放入常用号码库。</p></div><span class="tiny-note">5 + 2 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 前区号码</strong><span>已选 ${ui.dltFront.length} / 5</span></div>${ballGrid(35, ui.dltFront, 'dlt-front')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 后区号码</strong><span>已选 ${ui.dltBack.length} / 2</span></div>${ballGrid(12, ui.dltBack, 'dlt-back')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="dlt" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('dlt')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 5 + 2 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-dlt-single">清空</button><button class="primary-button" id="random-dlt-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="dlt" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-dlt-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.dltFront, back: ui.dltBack }], false, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${fiveBetDraftMarkup('dlt', ui.dltFiveDraft, false)}${savedTicketsMarkup('dlt')}`;
       return;
     }
     if (ui.dltMode === 'multiple') {
@@ -806,7 +849,7 @@
       content.innerHTML = `<div class="tool-intro"><div><div class="tool-kicker">SINGLE BET</div><h2>单式选号</h2><p>手动选好号码后点“记入今日支出”；“保存号码”会放入常用号码库。</p></div><span class="tiny-note">6 + 1 · ¥2</span></div>
         <div class="number-group"><div class="number-group-head"><strong><span class="red-text">●</span> 红色球</strong><span>已选 ${ui.ssqRed.length} / 6</span></div>${ballGrid(33, ui.ssqRed, 'ssq-red', 'red-ball')}</div>
         <div class="number-group"><div class="number-group-head"><strong><span class="blue-text">●</span> 蓝色球</strong><span>已选 ${ui.ssqBlue.length} / 1</span></div>${ballGrid(16, ui.ssqBlue, 'ssq-blue', 'blue-ball')}</div>
-        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="ssq" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${savedTicketsMarkup('ssq')}`;
+        <div class="tool-actions"><span class="ticket-cost">${valid ? '单式金额' : '选满 6 + 1 个号码'}<strong>${valid ? money(2) : '—'}</strong></span><div class="inline-controls"><button class="light-button" id="clear-ssq-single">清空</button><button class="primary-button" id="random-ssq-single">随机一注并记支出 <span>→</span></button><button class="light-button" data-record-ticket="ssq" ${valid && !dailyAlreadyRecorded ? '' : 'disabled'}>${dailyAlreadyRecorded ? '已记入今日' : '记入今日支出'}</button><button class="light-button" id="save-ssq-ticket" ${valid ? '' : 'disabled'}>保存号码</button></div></div>${valid ? ticketRows([{ front: ui.ssqRed, back: ui.ssqBlue }], true, 2) : '<div class="empty-result result-area">继续选择号码，选满后会显示单式预览。</div>'}${fiveBetDraftMarkup('ssq', ui.ssqFiveDraft, true)}${savedTicketsMarkup('ssq')}`;
       return;
     }
     const lineCount = combination(ui.ssqRed.length, 6) * ui.ssqBlue.length;
@@ -864,7 +907,7 @@
   function lotteryTicketSignature(ticket) {
     return JSON.stringify([
       ticket.game, ticket.kind, ticket.label, ticket.play, ticket.lines, ticket.cost,
-      ticket.amount || null, ticket.front || [], ticket.back || [], ticket.components || null, ticket.banker || null
+      ticket.amount || null, ticket.front || [], ticket.back || [], ticket.components || null, ticket.banker || null, ticket.bets || null
     ]);
   }
 
@@ -891,6 +934,17 @@
     addLotteryRandomTickets(game, [snapshot]);
   }
 
+  function saveFiveBetGroup(game, bets) {
+    if (!Array.isArray(bets) || bets.length !== 5) return false;
+    const gameLabel = game === 'dlt' ? '大乐透' : '双色球';
+    appendDailyTicket({
+      id: `${game}-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      game, kind: 'batch', label: `${gameLabel}随机5注`, play: '随机5注',
+      lines: 5, cost: 10, bets, recordedAt: new Date().toISOString()
+    });
+    return true;
+  }
+
   function addQuickPick(gameKey) {
     const game = QUICK_GAMES[gameKey];
     if (!game) return;
@@ -910,6 +964,29 @@
     if (nav) {
       event.preventDefault();
       showView(nav.dataset.nav);
+      return;
+    }
+    const deleteDailyTicket = event.target.closest('[data-delete-daily-ticket]');
+    if (deleteDailyTicket) {
+      const date = deleteDailyTicket.dataset.deleteDailyDate;
+      const record = getRecord(date);
+      if (!record) return;
+      record.tickets = (record.tickets || []).filter(ticket => ticket.id !== deleteDailyTicket.dataset.deleteDailyTicket);
+      if (!record.dice && record.tickets.length === 0) data.records = data.records.filter(item => item.date !== date);
+      else upsertRecord(record);
+      persist();
+      renderRecords();
+      if (date === todayKey()) { renderToday(); renderQuickPicks(); }
+      return;
+    }
+    const deleteRecord = event.target.closest('[data-delete-record-date]');
+    if (deleteRecord) {
+      const date = deleteRecord.dataset.deleteRecordDate;
+      if (!window.confirm(`确定删除 ${date} 的整条记录、号码和中奖金额吗？`)) return;
+      data.records = data.records.filter(record => record.date !== date);
+      persist();
+      renderRecords();
+      if (date === todayKey()) { renderToday(); renderQuickPicks(); }
       return;
     }
     const quickPick = event.target.closest('[data-quick-pick]');
@@ -970,23 +1047,47 @@
     if (event.target.closest('#roll-dice')) { rollToday(); return; }
     if (event.target.closest('#save-today-win')) { saveWin(todayKey(), document.getElementById('today-win')); return; }
     if (event.target.closest('#random-dlt-five')) {
-      const tickets = Array.from({ length: 5 }, createDltTicket);
-      addLotteryRandomTickets('dlt', tickets.map(ticket => ({
-        kind: 'single', label: '大乐透单式', lines: 1, price: 2,
-        front: ticket.front, back: ticket.back
-      })));
-      document.getElementById('dlt-five-preview').innerHTML = ticketRows(tickets, false, 10);
-      document.getElementById('dlt-daily-feedback').textContent = '已将这 5 注大乐透号码记入今天，支出增加 ¥10。';
+      ui.dltFiveDraft = Array.from({ length: 5 }, createDltTicket);
+      document.getElementById('dlt-daily-feedback').textContent = '';
+      persistLottery();
+      renderDlt();
+      return;
+    }
+    if (event.target.closest('#save-dlt-five')) {
+      if (!saveFiveBetGroup('dlt', ui.dltFiveDraft)) return;
+      ui.dltFiveDraft = [];
+      persistLottery();
+      renderDlt();
+      document.getElementById('dlt-daily-feedback').textContent = '5 注大乐透号码已作为一组记入今天，支出增加 ¥10。';
+      return;
+    }
+    if (event.target.closest('#clear-dlt-five')) {
+      ui.dltFiveDraft = [];
+      document.getElementById('dlt-daily-feedback').textContent = '';
+      persistLottery();
+      renderDlt();
       return;
     }
     if (event.target.closest('#random-ssq-five')) {
-      const tickets = Array.from({ length: 5 }, createSsqTicket);
-      addLotteryRandomTickets('ssq', tickets.map(ticket => ({
-        kind: 'single', label: '双色球单式', lines: 1, price: 2,
-        front: ticket.front, back: ticket.back
-      })));
-      document.getElementById('ssq-five-preview').innerHTML = ticketRows(tickets, true, 10);
-      document.getElementById('ssq-daily-feedback').textContent = '已将这 5 注双色球号码记入今天，支出增加 ¥10。';
+      ui.ssqFiveDraft = Array.from({ length: 5 }, createSsqTicket);
+      document.getElementById('ssq-daily-feedback').textContent = '';
+      persistLottery();
+      renderSsq();
+      return;
+    }
+    if (event.target.closest('#save-ssq-five')) {
+      if (!saveFiveBetGroup('ssq', ui.ssqFiveDraft)) return;
+      ui.ssqFiveDraft = [];
+      persistLottery();
+      renderSsq();
+      document.getElementById('ssq-daily-feedback').textContent = '5 注双色球号码已作为一组记入今天，支出增加 ¥10。';
+      return;
+    }
+    if (event.target.closest('#clear-ssq-five')) {
+      ui.ssqFiveDraft = [];
+      document.getElementById('ssq-daily-feedback').textContent = '';
+      persistLottery();
+      renderSsq();
       return;
     }
     if (event.target.closest('#random-dlt-single')) { const ticket = createDltTicket(); ui.dltFront = ticket.front; ui.dltBack = ticket.back; ui.savedNotice = ''; persistLottery(); addLotteryRandomTicket('dlt', { kind: 'single', label: '大乐透单式', lines: 1, price: 2, front: ticket.front, back: ticket.back }); renderDlt(); return; }

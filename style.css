@@ -38,10 +38,22 @@
 td{vertical-align:top}
 table{min-width:920px}
 @media(max-width:760px){.quick-games-grid{grid-template-columns:1fr;gap:9px}.quick-game-card{padding:16px}.quick-today-records{padding:15px 11px 12px}.quick-ticket-record{grid-template-columns:minmax(0,1fr) auto;gap:8px}.quick-ticket-record>span{grid-column:1/-1;grid-row:2}.quick-ticket-record>em{grid-column:2;grid-row:1}.main-nav .nav-button{padding:0 7px;font-size:10px}}
-.bulk-random-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 15px;padding:11px 13px;border:1px solid #e8ecdd;border-radius:9px;background:#f7f8f2}
-.bulk-random-bar>div{display:grid;gap:4px}
-.bulk-random-bar strong{font-size:11px;color:#4a5540}
-.bulk-random-bar small{font-size:9px;color:#8e9488}
-.five-ticket-preview:empty{display:none}
-.five-ticket-preview .result-area{margin-top:0;margin-bottom:18px}
-@media(max-width:760px){.bulk-random-bar{align-items:flex-start;flex-direction:column;margin-top:-2px}.bulk-random-bar button{width:100%}}
+.five-bet-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:13px;border:1px solid #e8ecdd;border-radius:9px;background:#f7f8f2}
+.five-bet-panel>div:first-child{display:grid;gap:4px}
+.five-bet-panel strong{font-size:11px;color:#4a5540}
+.five-bet-panel small{font-size:9px;color:#8e9488}
+.five-bet-empty{margin-top:9px}
+.daily-ticket{display:block;padding:7px 8px}
+.daily-ticket-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px}
+.daily-ticket-head strong{grid-column:auto;grid-row:auto;white-space:normal}
+.daily-ticket-head em{grid-column:auto;grid-row:auto}
+.daily-ticket-numbers{display:block;grid-column:1/-1;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;font-weight:600;line-height:1.55;letter-spacing:.03em;color:#424a39;white-space:normal;overflow-wrap:anywhere}
+.daily-ticket-lines{display:grid;gap:3px;margin-top:6px}
+.daily-ticket-lines span{display:flex;align-items:flex-start;gap:7px;grid-column:auto;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;font-weight:600;letter-spacing:.02em;color:#424a39;white-space:normal}
+.daily-ticket-lines b{width:17px;flex:none;color:#969d89;font-size:9px;font-weight:500}
+.ticket-delete{padding:3px 5px;border:0;border-radius:5px;background:#f8eeeb;color:#a56e65;font-size:9px;white-space:nowrap}
+.ticket-delete:hover,.table-delete:hover{background:#f3e2de;color:#954e44}
+.record-actions{white-space:nowrap}
+.table-delete{display:block;height:28px;margin-top:5px;padding:0 8px;border:1px solid #f0e4e0;border-radius:6px;background:#fff;color:#a56e65;font-size:9px}
+@media(max-width:760px){.five-bet-panel{align-items:flex-start;flex-direction:column}.five-bet-panel .inline-controls{justify-content:flex-start}.five-bet-panel .inline-controls button{flex:1}}
+.quick-ticket-record>span{white-space:pre-line;line-height:1.6}
