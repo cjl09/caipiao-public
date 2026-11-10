@@ -845,16 +845,20 @@
     </section>`;
   }
 
-  function appendDailyTicket(ticketData) {
-    const ticket = cleanDailyTicket(ticketData);
-    if (!ticket) return;
+  function appendDailyTickets(ticketDataList) {
+    const tickets = ticketDataList.map(cleanDailyTicket).filter(Boolean);
+    if (!tickets.length) return;
     const date = todayKey();
     const record = getRecord(date) || { date, dice: null, bought: false, spend: 0, win: 0, tickets: [] };
-    record.tickets = [...(record.tickets || []), ticket].slice(-500);
+    record.tickets = [...(record.tickets || []), ...tickets].slice(-500);
     upsertRecord(record);
     renderQuickPicks();
     renderToday();
     renderRecords();
+  }
+
+  function appendDailyTicket(ticketData) {
+    appendDailyTickets([ticketData]);
   }
 
   function lotteryTicketSignature(ticket) {
@@ -873,14 +877,18 @@
     return Boolean(candidate && record?.tickets?.some(ticket => lotteryTicketSignature(ticket) === lotteryTicketSignature(candidate)));
   }
 
-  function addLotteryRandomTicket(game, snapshot) {
-    if (!snapshot) return;
-    appendDailyTicket({
+  function addLotteryRandomTickets(game, snapshots) {
+    const time = Date.now();
+    const recordedAt = new Date().toISOString();
+    appendDailyTickets(snapshots.filter(Boolean).map((snapshot, index) => ({
       ...snapshot,
-      id: `${game}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      game, play: snapshot.label, cost: snapshot.price,
-      recordedAt: new Date().toISOString()
-    });
+      id: `${game}-${time}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+      game, play: snapshot.label, cost: snapshot.price, recordedAt
+    })));
+  }
+
+  function addLotteryRandomTicket(game, snapshot) {
+    addLotteryRandomTickets(game, [snapshot]);
   }
 
   function addQuickPick(gameKey) {
@@ -961,6 +969,26 @@
     }
     if (event.target.closest('#roll-dice')) { rollToday(); return; }
     if (event.target.closest('#save-today-win')) { saveWin(todayKey(), document.getElementById('today-win')); return; }
+    if (event.target.closest('#random-dlt-five')) {
+      const tickets = Array.from({ length: 5 }, createDltTicket);
+      addLotteryRandomTickets('dlt', tickets.map(ticket => ({
+        kind: 'single', label: '大乐透单式', lines: 1, price: 2,
+        front: ticket.front, back: ticket.back
+      })));
+      document.getElementById('dlt-five-preview').innerHTML = ticketRows(tickets, false, 10);
+      document.getElementById('dlt-daily-feedback').textContent = '已将这 5 注大乐透号码记入今天，支出增加 ¥10。';
+      return;
+    }
+    if (event.target.closest('#random-ssq-five')) {
+      const tickets = Array.from({ length: 5 }, createSsqTicket);
+      addLotteryRandomTickets('ssq', tickets.map(ticket => ({
+        kind: 'single', label: '双色球单式', lines: 1, price: 2,
+        front: ticket.front, back: ticket.back
+      })));
+      document.getElementById('ssq-five-preview').innerHTML = ticketRows(tickets, true, 10);
+      document.getElementById('ssq-daily-feedback').textContent = '已将这 5 注双色球号码记入今天，支出增加 ¥10。';
+      return;
+    }
     if (event.target.closest('#random-dlt-single')) { const ticket = createDltTicket(); ui.dltFront = ticket.front; ui.dltBack = ticket.back; ui.savedNotice = ''; persistLottery(); addLotteryRandomTicket('dlt', { kind: 'single', label: '大乐透单式', lines: 1, price: 2, front: ticket.front, back: ticket.back }); renderDlt(); return; }
     if (event.target.closest('#clear-dlt-single')) { ui.dltFront = []; ui.dltBack = []; ui.savedNotice = ''; persistLottery(); renderDlt(); return; }
     if (event.target.closest('#random-dlt-multiple')) {
