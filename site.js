@@ -84,6 +84,7 @@
     const hash = location.hash.slice(1);
     const showHistory = Object.hasOwn(games, hash);
     if (editor.open) editor.close();
+    if (byId('picker').open) byId('picker').close();
     byId('today').hidden = showHistory;
     byId('history').hidden = !showHistory;
     document.querySelectorAll('nav a').forEach(link => {
@@ -177,6 +178,207 @@
     link.download = 'draws.js';
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  const picker = byId('picker');
+  const picksKey = 'xiaocai-number-picks-v1';
+  const maxPickLines = 10000;
+  const groupKeys = ['front', 'back'];
+  let pickGame = 'dlt';
+  const drafts = {};
+  let draft;
+
+  function combinations(n, k) {
+    if (n < k) return 0;
+    let result = 1;
+    for (let i = 1; i <= k; i++) result = result * (n - i + 1) / i;
+    return Math.round(result);
+  }
+
+  function countLines(front, back) {
+    const game = games[pickGame];
+    return combinations(front, game.front[1]) * combinations(back, game.back[1]);
+  }
+
+  function summary(lines) {
+    return lines.toLocaleString('zh-CN') + ' 注 · ¥' + (lines * 2).toLocaleString('zh-CN');
+  }
+
+  function renderPickPrice() {
+    const game = games[pickGame];
+    const lines = countLines(draft.front.size, draft.back.size);
+    const valid = lines > 0 && (draft.mode === 'single' || lines > 1) && lines <= maxPickLines;
+    byId('picker-price').textContent = !lines
+      ? '请至少选满 ' + game.front[1] + ' + ' + game.back[1] + ' 个号码'
+      : lines > maxPickLines ? summary(lines) + '，超过 10,000 注上限'
+      : !valid ? '复式需在至少一组多选一个号码'
+      : summary(lines);
+    byId('picker-save').disabled = !valid;
+    byId('picker-balls').querySelectorAll('button').forEach(button => {
+      button.setAttribute('aria-pressed', String(draft[button.dataset.group].has(Number(button.value))));
+    });
+    return valid;
+  }
+
+  function renderPickControls() {
+    const counts = byId('picker-counts');
+    counts.hidden = draft.mode !== 'multiple';
+    counts.replaceChildren();
+    const groups = byId('picker-balls');
+    groups.replaceChildren();
+    for (const group of groupKeys) {
+      const [name, min, max] = games[pickGame][group];
+      const label = document.createElement('label');
+      label.textContent = '随机' + name + '个数';
+      const select = document.createElement('select');
+      select.id = 'pick-count-' + group;
+      for (let count = min; count <= max; count++) select.add(new Option(String(count), String(count)));
+      select.value = String(draft.counts[group]);
+      select.addEventListener('change', () => { draft.counts[group] = Number(select.value); });
+      label.append(select);
+      counts.append(label);
+
+      const fieldset = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = name;
+      fieldset.append(legend);
+      const balls = document.createElement('div');
+      balls.className = 'balls';
+      for (let value = 1; value <= max; value++) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ball ' + group;
+        button.dataset.group = group;
+        button.value = String(value);
+        button.textContent = String(value).padStart(2, '0');
+        balls.append(button);
+      }
+      fieldset.append(balls);
+      groups.append(fieldset);
+    }
+    renderPickPrice();
+  }
+
+  function savedPicks() {
+    const data = readStorage(picksKey);
+    return Array.isArray(data) ? data : [];
+  }
+
+  function renderSavedPicks() {
+    const list = byId('picker-saved');
+    list.replaceChildren();
+    const rows = savedPicks().filter(row => row?.game === pickGame);
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.textContent = '暂无已保存方案';
+      list.append(empty);
+    }
+    for (const row of rows) {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      title.textContent = (row.mode === 'multiple' ? '复式' : '单式') + ' · ' + summary(countLines(row.front.length, row.back.length));
+      const numbers = document.createElement('p');
+      numbers.textContent = [row.front, row.back].map(values => values.map(value => String(value).padStart(2, '0')).join(' ')).join(' + ');
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = '删除';
+      remove.addEventListener('click', () => {
+        if (!writeStorage(picksKey, savedPicks().filter(pick => pick?.id !== row.id))) {
+          byId('picker-status').textContent = '删除失败，请检查浏览器存储权限';
+          return;
+        }
+        renderSavedPicks();
+        byId('picker-status').textContent = '已删除方案';
+      });
+      item.append(title, numbers, remove);
+      list.append(item);
+    }
+  }
+
+  byId('open-picker').addEventListener('click', () => {
+    pickGame = activeGame;
+    const game = games[pickGame];
+    drafts[pickGame] ??= {
+      mode: 'single', front: new Set(), back: new Set(),
+      counts: { front: game.front[1] + 1, back: game.back[1] }
+    };
+    draft = drafts[pickGame];
+    byId('picker-title').textContent = game.name + '选号';
+    byId('picker-mode').value = draft.mode;
+    byId('picker-status').textContent = '';
+    renderPickControls();
+    renderSavedPicks();
+    picker.showModal();
+  });
+
+  byId('close-picker').addEventListener('click', () => picker.close());
+
+  byId('picker-mode').addEventListener('change', event => {
+    draft.mode = event.target.value;
+    if (draft.mode === 'single') {
+      for (const group of groupKeys) {
+        if (draft[group].size > games[pickGame][group][1]) draft[group].clear();
+      }
+    }
+    byId('picker-status').textContent = '';
+    renderPickControls();
+  });
+
+  byId('picker-balls').addEventListener('click', event => {
+    const button = event.target.closest('button[data-group]');
+    if (!button) return;
+    const group = button.dataset.group;
+    const value = Number(button.value);
+    const selected = draft[group];
+    if (selected.has(value)) selected.delete(value);
+    else if (draft.mode === 'single' && selected.size >= games[pickGame][group][1]) {
+      byId('picker-status').textContent = '请先取消一个已选号码';
+      return;
+    } else selected.add(value);
+    byId('picker-status').textContent = '';
+    renderPickPrice();
+  });
+
+  byId('picker-random').addEventListener('click', () => {
+    const game = games[pickGame];
+    const counts = draft.mode === 'multiple' ? draft.counts : { front: game.front[1], back: game.back[1] };
+    const lines = countLines(counts.front, counts.back);
+    if (draft.mode === 'multiple' && (lines < 2 || lines > maxPickLines)) {
+      byId('picker-status').textContent = lines < 2 ? '请增加至少一组随机号码个数' : '随机方案超过 10,000 注，请减少号码个数';
+      return;
+    }
+    for (const group of groupKeys) {
+      const pool = Array.from({ length: game[group][2] }, (_, index) => index + 1);
+      const selected = new Set();
+      while (selected.size < counts[group]) {
+        selected.add(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      }
+      draft[group] = selected;
+    }
+    byId('picker-status').textContent = '';
+    renderPickPrice();
+  });
+
+  byId('picker-clear').addEventListener('click', () => {
+    for (const group of groupKeys) draft[group].clear();
+    byId('picker-status').textContent = '';
+    renderPickPrice();
+  });
+
+  byId('picker-save').addEventListener('click', () => {
+    if (!renderPickPrice()) return;
+    const [front, back] = groupKeys.map(group => [...draft[group]].sort((a, b) => a - b));
+    const row = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+      game: pickGame, mode: draft.mode, front, back
+    };
+    if (!writeStorage(picksKey, [row, ...savedPicks()])) {
+      byId('picker-status').textContent = '保存失败，请检查浏览器存储权限';
+      return;
+    }
+    renderSavedPicks();
+    byId('picker-status').textContent = '已保存到当前浏览器';
   });
 
   window.addEventListener('hashchange', route);

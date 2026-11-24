@@ -29,11 +29,34 @@
     <section id="history" hidden>
       <div class="history-heading">
         <div><h1 id="game-name"></h1><p id="draw-summary"></p></div>
-        <button id="open-editor" type="button">录入开奖</button>
+        <div class="history-actions">
+          <button id="open-picker" type="button">选号</button>
+          <button id="open-editor" type="button" class="secondary">录入开奖</button>
+        </div>
       </div>
       <ol id="draw-list" class="draw-list" aria-label="开奖号码"></ol>
     </section>
   </main>
+  <dialog id="picker" aria-labelledby="picker-title">
+    <div class="dialog-heading">
+      <h2 id="picker-title">选号</h2>
+      <button type="button" id="close-picker" class="secondary">关闭</button>
+    </div>
+    <label class="picker-mode">玩法
+      <select id="picker-mode"><option value="single">单式</option><option value="multiple">复式</option></select>
+    </label>
+    <div id="picker-counts" class="picker-counts" hidden></div>
+    <div id="picker-balls"></div>
+    <p id="picker-price" class="picker-price" role="status"></p>
+    <div class="dialog-actions">
+      <button type="button" id="picker-random" class="secondary">随机选号</button>
+      <button type="button" id="picker-clear" class="secondary">清空</button>
+      <button type="button" id="picker-save">保存方案</button>
+    </div>
+    <p id="picker-status" role="status"></p>
+    <h3>已保存的方案</h3>
+    <ul id="picker-saved" class="picker-saved"></ul>
+  </dialog>
   <dialog id="editor">
     <form id="draw-form">
       <div class="dialog-heading"><h2>录入开奖</h2><button type="button" id="close-editor" class="secondary">关闭</button></div>
